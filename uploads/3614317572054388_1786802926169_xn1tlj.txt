@@ -1,0 +1,108 @@
+Response: The core problem you are facing comes down to a realistic scenario: Project A might use GitHub Org A, while Project B uses GitHub Org B (or a client's personal GitHub account).
+If you restrict your workspace to only one GitHub connection, you make it impossible for different projects inside the same workspace to pull repositories from different GitHub accounts or organizations.
+Here is how production platforms like Linear, Jira, and ClickUp solve this exact problem, and how you should structure it for BoostUp.
+The Industry Standard Architecture: "Multiple Installations per Workspace"
+Instead of allowing only 1 GitHub App connection per Workspace, allow a Workspace to have multiple GitHub App connections.
+                                  ┌───────────────────────────┐
+                                  │     BoostUp Workspace     │
+                                  └─────────────┬─────────────┘
+                                                │
+                      ┌─────────────────────────┴─────────────────────────┐
+                      ▼                                                   ▼
+        ┌───────────────────────────┐                       ┌───────────────────────────┐
+        │   GitHub Installation 1   │                       │   GitHub Installation 2   │
+        │    (e.g., Company Org)    │                       │    (e.g., Client B Org)   │
+        └─────────────┬─────────────┘                       └─────────────┬─────────────┘
+                      │                                                   │
+                      ▼                                                   ▼
+            ┌───────────────────┐                               ┌───────────────────┐
+            │  Repo 1 | Repo 2  │                               │  Repo 3 | Repo 4  │
+            └─────────┬─────────┘                               └─────────┬─────────┘
+                      │                                                   │
+                      ▼                                                   ▼
+            ┌───────────────────┐                               ┌───────────────────┐
+            │     Project A     │                               │     Project B     │
+            └───────────────────┘                               └───────────────────┘
+
+
+Who Should Do What? (Roles & Permissions)
+To keep security tight while keeping project setup flexible, divide permissions between Workspace Admins and Project Leaders:
+1. Connecting a GitHub Account (Adding an Installation)
+Who can do it? Workspace Admin OR Project Leader.
+Why? If Project Leader "Alex" manages a client project on GitHub Org B, Alex clicks "Connect GitHub Account", logs into GitHub Org B, and installs the BoostUp App for that org.
+Result: BoostUp saves this installation under the Workspace, but tags Alex as the person who added it.
+2. Attaching a Repository to a Project
+Who can do it? Project Leader / Project Admin.
+How it works:
+Inside Project Settings, the Project Leader opens "Attach Repository".
+The dropdown shows all unattached repositories (projectId: null) across all GitHub accounts connected to this workspace.
+The Project Leader selects client-b/mobile-app.
+The system sets projectId = currentProject.id.
+Locking: That repository is now locked to this project and will not appear in the dropdown for any other project.
+3. Viewing Synced Commits, PRs, and Issues
+Who can do it? All Project Members.
+How it works: Any team member assigned to Project A can view its PRs, commits, and merged status inside the BoostUp project dashboard. They don't need any GitHub permissions or tokens.
+4. Detaching or Re-assigning a Repository
+Who can do it? Workspace Admin (Override) or the Project Leader.
+How it works: If a repo was attached to the wrong project, an Admin can click "Detach", which sets projectId = null, making it available to attach elsewhere.
+Step-by-Step System Flow
+Here is the exact journey from start to finish:
+Step 1: Connecting a GitHub Account
+Inside BoostUp, an Admin or Project Leader clicks "Integrate GitHub Account".
+BoostUp redirects them to GitHub to select an Organization/User account and choose which repositories to allow.
+GitHub redirects back to your backend setup callback.
+Your backend stores a record in github_installations:
+{
+  workspaceId: "ws_123",
+  installationId: 987654,
+  accountLogin: "client-b-org",
+  installedBy: "user_alex"
+}
+
+
+Your backend immediately queries GitHub for all repos under that installation and saves them in github_repos with projectId: null.
+Step 2: Mapping a Repo to a Project
+Project Leader Alex opens Project B Settings > GitHub Repos.
+Alex makes an API request: GET /api/github/workspaces/ws_123/unattached-repos.
+The API returns all repos where workspaceId == ws_123 AND projectId == null.
+Alex selects client-b/mobile-app and posts to /api/github/projects/proj_456/map-repo.
+Your backend updates github_repos:
+{
+  fullName: "client-b/mobile-app",
+  installationId: 987654,
+  projectId: "proj_456" // LOCKED to Project B
+}
+
+
+Step 3: Real-Time Event Ingestion (Webhooks)
+A developer pushes code or merges a PR on client-b/mobile-app.
+GitHub posts a webhook to your backend POST /webhooks/github.
+Your server checks the payload:
+payload.installation.id = 987654
+payload.repository.id = 11223344
+Your server finds the repo in DB → resolves projectId = "proj_456".
+Your background worker (BullMQ) updates github_pull_requests for proj_456.
+Your Socket.IO server notifies everyone looking at Project B that a PR was merged.
+Summary Matrix
+
+Action
+Allowed Roles
+System Outcome
+Connect new GitHub Org/Account
+Workspace Admin, Project Lead
+Adds a new installation_id to the Workspace's connection pool.
+View Unattached Repos
+Project Members, Project Lead, Admin
+Returns all repos with projectId: null across workspace installations.
+Attach Repo to Project
+Project Lead, Workspace Admin
+Sets projectId, locks repo from other projects, triggers historical backfill.
+View PRs/Commits in Dashboard
+All Project Members
+Reads synced database records filtered by projectId.
+Detach/Reassign Repo
+Workspace Admin
+Sets projectId = null, unlocking it back into the unattached pool.
+
+Does this structure answer your questions about how multi-organization projects work inside a single workspace?
+

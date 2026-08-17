@@ -1,0 +1,12 @@
+{
+  "name": "email-webhook-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": { "wrangler": "^3.90.0" },
+  "dependencies": { "postal-mime": "^2.2.7" }
+}

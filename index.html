@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket Test</title>
+</head>
+<body>
+
+<h2>Socket Test</h2>
+
+<input id="storeId" placeholder="Enter store ID" />
+<button onclick="join()">Join Store</button>
+
+<ul id="logs"></ul>
+
+<!-- SAME HOST FIX -->
+<script src="http://localhost:5000/socket.io/socket.io.js"></script>
+
+<script>
+    const socket = io("http://localhost:5000");
+
+    function log(msg) {
+        const li = document.createElement("li");
+        li.innerText = msg;
+        document.getElementById("logs").appendChild(li);
+    }
+
+    function join() {
+        const storeId = document.getElementById("storeId").value;
+
+        socket.emit("register-store", { storeId });
+
+        log("Joined store: " + storeId);
+    }
+
+    socket.on("connect", () => {
+        log("Connected: " + socket.id);
+    });
+
+    socket.on("disconnect", (reason) => {
+        log("Disconnected: " + reason);
+    });
+
+    socket.on("new-job", (data) => {
+        log("🔥 New Job: " + JSON.stringify(data));
+    });
+</script>
+
+</body>
+</html>
