@@ -2,12 +2,20 @@ import PostalMime from 'postal-mime';
 
 export default {
   async email(message, env, ctx) {
-    try {
-      const parser = new PostalMime();
-      
-      const rawEmail = new Response(message.raw);
-      const parsedEmail = await parser.parse(await rawEmail.arrayBuffer());
+    let stage = 'initialization';
 
+    try {
+      const webhookSecret = env.EMAIL_WEBHOOK_SECRET;
+
+      if (!webhookSecret) {
+        throw new Error('EMAIL_WEBHOOK_SECRET is not configured in the Worker environment');
+      }
+
+      stage = 'email parsing';
+      const parser = new PostalMime();
+      const parsedEmail = await parser.parse(message.raw);
+
+      stage = 'form construction';
       const formData = new FormData();
       formData.append('from', message.from);
       formData.append('to', message.to);
@@ -21,24 +29,26 @@ export default {
         });
       }
 
-      // ⚠️ REPLACE WITH YOUR CURRENT NGROK URL
-      const backendWebhookUrl = "https://c9ad-2401-4900-36cb-dfce-6432-626c-d428-56ab.ngrok-free.app/api/email/inbound-parse"; 
+      stage = 'webhook delivery';
+      const backendWebhookUrl = "https://api.yellowqueue.dev/api/email/inbound-parse"; 
       
       const response = await fetch(backendWebhookUrl, {
         method: 'POST',
         headers: {
-          'x-webhook-secret': 'my_super_secret_key_123'
+          'x-webhook-secret': webhookSecret
         },
         body: formData
       });
 
       if (!response.ok) {
-        console.error("Backend rejected the webhook:", response.status);
+        const responseBody = await response.text();
+        console.error("Backend rejected the webhook:", response.status, responseBody);
         message.setReject("Webhook delivery failed");
       }
     } catch (error) {
-      console.error("Worker error parsing email:", error.message);
-      message.setReject("Internal parser error");
+      console.error(`Worker error during ${stage}:`, error?.stack || error);
+      message.setReject(`Email processing failed during ${stage}`);
     }
   }
 };
+

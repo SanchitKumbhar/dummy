@@ -43,7 +43,7 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
         const senderEmail = emailData.from || "unknown@email.com";
         const subject = emailData.subject || "No Subject";
         const jobId = `email-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-        
+        console.log(senderEmail);
         let jobStatus = "pending";
         let jobNotes = subject;
 

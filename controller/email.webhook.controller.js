@@ -23,9 +23,14 @@ const findStoreByEmail = (recipientEmail) => {
 const receiveCloudflareWebhook = async (req, res) => {
     try {
         const io = req.app.get("io");
+        const expectedSecret = process.env.EMAIL_WEBHOOK_SECRET;
+
+        if (!expectedSecret) {
+            return res.status(500).json({ error: "Webhook secret is not configured" });
+        }
 
         // 1. Verify secret
-        if (req.headers['x-webhook-secret'] !== 'my_super_secret_key_123') {
+        if (req.headers['x-webhook-secret'] !== expectedSecret) {
             return res.status(403).json({ error: "Unauthorized request" });
         }
 

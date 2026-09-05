@@ -28,7 +28,10 @@ const {
 
 const db = require("./config/sqlite.config");
 
-dotenv.config();
+dotenv.config({
+    path: path.join(__dirname, ".env"),
+    override: true
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -100,6 +103,7 @@ app.use("/api/whatsapp", whatsappRoute);
 // ---- META WEBHOOK VERIFICATION ----
 app.get("/webhook", (req, res) => {
     const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || "inkspool";
+    console.log(VERIFY_TOKEN)
     const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
     if (mode === "subscribe" && token === VERIFY_TOKEN) {
         res.status(200).send(challenge);
