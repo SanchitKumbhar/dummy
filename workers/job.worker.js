@@ -3,6 +3,7 @@
 const { Worker } = require("bullmq");
 const Redis = require("ioredis");
 const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const db = require("../config/sqlite.config");
 const {
     isUnsupportedMediaType,
@@ -10,7 +11,6 @@ const {
     getTokenForStore
 } = require("../service/archive.service.js");
 const { sendWhatsappMessage } = require("../service/whatsapp.service.js");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
 const redisUrl = process.env.REDIS_URL;
 if (!redisUrl) {

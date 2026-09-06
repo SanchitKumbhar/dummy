@@ -1,11 +1,9 @@
 const createstoreservice=require("../service/createstore.service");
 const createStore = async (req, res) => {
     try {
-        const { storename, phonenumber } = req.body;
-        await createstoreservice(storename,phonenumber);        
-        return res.status(200).json({
-            success: true,
-        });
+        const { storename, phonenumber, password } = req.body;
+        const result = await createstoreservice(storename, phonenumber, password);
+        return res.status(result.status).json(result);
     } catch (error) {
         console.error(error);
 

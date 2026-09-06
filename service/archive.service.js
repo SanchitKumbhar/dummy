@@ -13,7 +13,7 @@ const BACKEND_ROOT = path.resolve(__dirname, "..");
 const UPLOADS_DIR = path.join(BACKEND_ROOT, "uploads");
 
 const GRAPH_API_VERSION = process.env.WHATSAPP_API_VERSION || "v21.0";
-const DEFAULT_WHATSAPP_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || "EAAWCYtNJ9HYBSAxZBYRFbVRJTSlWS8fdyqIfpc1kwZBPlmZAlJhxO9TzPreceBSPZC7DXpHMQLK3IRfzBajF4XILcBD8Fq1TPV1n4freZAvGlvI7W5VIULtzY4dTWdaHOWzamZC7L6Omjaf8ZC8HxsPC8XnX0uZCoQ3cVKVZCeNZBS1wJZAI3xOp4saHhzmJCvrHwZDZD"
+const GLOBAL_WHATSAPP_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN || "";
 const MIME_BY_EXTENSION = {
     ".pdf": "application/pdf",
     ".jpg": "image/jpeg",
@@ -109,7 +109,7 @@ function getTokenForStore(storeId) {
             [storeId],
             (err, row) => {
                 if (err || !row?.whatsapp_access_token) {
-                    return resolve(DEFAULT_WHATSAPP_TOKEN);
+                    return resolve(GLOBAL_WHATSAPP_TOKEN || null);
                 }
                 resolve(row.whatsapp_access_token);
             }
@@ -314,7 +314,10 @@ async function extractArchiveFile(archivePath, archiveFileName, extractedRootDir
  * owns the WABA the message arrived on.
  */
 async function prepareIncomingFiles(payload, token) {
-    const resolvedToken = token || DEFAULT_WHATSAPP_TOKEN;
+    const resolvedToken = token || GLOBAL_WHATSAPP_TOKEN;
+    if (!resolvedToken) {
+        throw new Error("WhatsApp access token is not configured");
+    }
     const messageSid = payload.MessageSid || `archive-${Date.now()}`;
     const extractedRootDir = path.join(UPLOADS_DIR, "archive-temp", sanitizeSegment(messageSid));
     ensureDir(extractedRootDir);

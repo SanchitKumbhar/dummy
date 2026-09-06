@@ -1,4 +1,0 @@
-PS D:\backup\backend\src2\email-webhook-worker> $env:CLOUDFLARE_ACCOUNT_ID="4eec0239b1044f737cb2f5
-08ebb76844"
-PS D:\backup\backend\src2\email-webhook-worker> $env:CLOUDFLARE_API_TOKEN="cfat_kSNWwTdsxVCkoBudZq
-zqYtI3to1ew5x5E2ndRaL30965b7a4"

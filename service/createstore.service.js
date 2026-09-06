@@ -2,7 +2,11 @@ const db = require("../config/sqlite.config");
 const bcrypt = require("bcrypt");
 
 async function createstoreservice(storename, phonenumber, password) {
-    const hash = password ? await bcrypt.hash(password, 10) : await bcrypt.hash("default123", 10);
+    if (!password) {
+        return { status: 400, message: "Password is required" };
+    }
+
+    const hash = await bcrypt.hash(password, 10);
 
     return new Promise((resolve, reject) => {
         db.run(

@@ -7,9 +7,8 @@
 const { Worker, Queue } = require("bullmq");
 const Redis = require("ioredis");
 const dotenv = require("dotenv");
-const { prepareIncomingFiles, getTokenForStore } = require("../service/archive.service.js");
-
 dotenv.config({ path: require("path").resolve(__dirname, "../.env") });
+const { prepareIncomingFiles, getTokenForStore } = require("../service/archive.service.js");
 
 const redisUrl = process.env.REDIS_URL;
 if (!redisUrl) {
