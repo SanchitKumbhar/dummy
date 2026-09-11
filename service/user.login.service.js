@@ -1,6 +1,6 @@
-const db = require("../config/sqlite.config");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const Store = require("../model/store.model");
 require("dotenv").config();
 
 async function generateToken(storeId, phoneNumber) {
@@ -20,18 +20,7 @@ async function checkPassword(plainPassword, hashedPassword) {
     return bcrypt.compare(plainPassword, hashedPassword);
 }
 
-async function getStoreByPhone(phoneNumber) {
-    return new Promise((resolve, reject) => {
-        db.get(
-            `SELECT store_id, store_name, password FROM stores WHERE phone_number = ?`,
-            [phoneNumber],
-            (err, user) => {
-                if (err) return reject(err);
-                resolve(user || null);
-            }
-        );
-    });
-}
+async function getStoreByPhone(phoneNumber) { return Store.findOne({ phoneNumber }).lean(); }
 
 async function userloginService(phoneNumber, password) {
     try {
@@ -47,13 +36,13 @@ async function userloginService(phoneNumber, password) {
         }
 
         // FIX: was result.id — SQLite returns store_id
-        const token = await generateToken(user.store_id, phoneNumber);
+        const token = await generateToken(user._id.toString(), phoneNumber);
 
         return {
             status: 201,
             token,
-            storeId: user.store_id,
-            storeName: user.store_name
+            storeId: user._id.toString(),
+            storeName: user.storeName
         };
     } catch (error) {
         console.error("Login service error:", error);

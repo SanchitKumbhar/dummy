@@ -1,6 +1,6 @@
-const db = require("../config/sqlite.config");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const Store = require("../model/store.model");
 require("dotenv").config();
 
 async function generateToken(storeId, phoneNumber) {
@@ -11,39 +11,16 @@ async function generateToken(storeId, phoneNumber) {
     );
 }
 
-function signupService(name, phonenumber, password, email, district, state, address, cache_folder) {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const hash = await bcrypt.hash(password, 10);
-
-            // whatsapp_phone_number_id is intentionally NULL here — it doesn't
-            // exist yet at signup. It gets populated later once this store
-            // completes WhatsApp Embedded Signup/Coexistence, at which point
-            // you UPDATE this row with the phone_number_id Meta returns.
-            db.run(
-                `INSERT INTO stores (store_name, whatsapp_phone_number_id, phone_number, password, email, district, state, address, cache_folder)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [name, null, phonenumber, hash, email || null, district, state, address, cache_folder],
-                async function (err) {
-                    if (err) {
-                        // UNIQUE constraint on phone_number or email
-                        if (err.code === "SQLITE_CONSTRAINT") {
-                            return resolve({
-                                status: 409,
-                                message: "Phone number or email already registered"
-                            });
-                        }
-                        return reject(err);
-                    }
-
-                    const token = await generateToken(this.lastID, phonenumber);
-                    resolve({ status: 201, token });
-                }
-            );
-        } catch (err) {
-            reject(err);
-        }
-    });
+async function signupService(name, phonenumber, password, email, district, state, address, cache_folder) {
+    if (!name || !phonenumber || !password) return { status: 400, message: "Name, phone number and password are required" };
+    const hash = await bcrypt.hash(password, 10);
+    try {
+        const store = await Store.create({ storeName: name, phoneNumber: phonenumber, password: hash, email: email || undefined, district, state, address, cacheFolder: cache_folder });
+        return { status: 201, token: await generateToken(store._id.toString(), phonenumber), storeId: store._id.toString() };
+    } catch (error) {
+        if (error.code === 11000) return { status: 409, message: "Phone number or email already registered" };
+        throw error;
+    }
 }
 
 module.exports = signupService;

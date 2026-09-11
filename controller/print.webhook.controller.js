@@ -1,8 +1,7 @@
 const { processIncomingMessage } = require("../service/print.webhook.service.js");
 const { isArchiveAttachment, prepareIncomingFiles } = require("../service/archive.service.js");
 const jobService = require("../service/jobs.service.js");
-const db = require("../config/sqlite.config");
-const { sendPrintCompletionMessage } = require("../service/whatsapp.service.js");
+const Store = require('../model/store.model');
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
 
 /**
@@ -33,17 +32,9 @@ const verifyWebhook = (req, res) => {
  * ASSUMES a `stores` table with a `whatsapp_phone_number_id` column.
  * Adjust the table/column names to match your actual schema.
  */
-const resolveStoreIdByPhoneNumberId = (phoneNumberId) => {
-    return new Promise((resolve, reject) => {
-        db.get(
-            `SELECT store_id FROM stores WHERE whatsapp_phone_number_id = ?`,
-            [phoneNumberId],
-            (err, row) => {
-                if (err) return reject(err);
-                resolve(row ? row.store_id : null);
-            }
-        );
-    });
+const resolveStoreIdByPhoneNumberId = async (phoneNumberId) => {
+    const store = await Store.findOne({ 'whatsapp.phoneNumberId': phoneNumberId }).select('_id').lean();
+    return store?._id?.toString() || null;
 };
 
 /**

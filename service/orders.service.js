@@ -1,218 +1,81 @@
-const db = require("../config/sqlite.config");
-const { v4: uuidv4 } = require("uuid");
+const Job = require('../model/job.model');
+const mongoose = require('mongoose');
 
-// FIX: was hardcoded [1] — now uses dynamic store_id
-function ordersService(store_id) {
-    return new Promise((resolve, reject) => {
-        db.all(
-            `SELECT job_id,
-                    customer_name,
-                    sender_phone,
-                    source,
-                    file_count,
-                    total_pages,
-                    status,
-                    cost_of_job,
-                    created_at,
-                    updated_at
-             FROM print_jobs
-             WHERE store_id = ?
-             ORDER BY created_at DESC`,
-            [store_id],
-            (err, rows) => {
-                if (err) {
-                    console.error("ordersService error:", err);
-                    return reject(err);
-                }
-                return resolve({ status: 200, order: rows || [] });
-            }
-        );
-    });
+function tenantFilter(storeId) {
+    const filters = [];
+    if (mongoose.isValidObjectId(storeId)) filters.push({ storeId: new mongoose.Types.ObjectId(storeId) }, { storeId: String(storeId) });
+    const legacyStoreId = Number(storeId);
+    if (Number.isSafeInteger(legacyStoreId)) filters.push({ legacyStoreId });
+    return filters.length === 1 ? filters[0] : { $or: filters.length ? filters : [{ storeId: String(storeId) }] };
 }
 
-// storeId is always required to prevent cross-tenant access (IDOR)
+async function ordersService(storeId) {
+    const jobs = await Job.find(tenantFilter(storeId))
+        .sort({ createdAt: -1 })
+        .lean();
+    return { status: 200, order: jobs };
+}
+
 async function costService(jobId, cost, storeId) {
-    return new Promise((resolve, reject) => {
-        db.run(
-            `UPDATE print_jobs
-             SET cost_of_job = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE job_id = ? AND store_id = ?`,
-            [cost, jobId, storeId],
-            function (err) {
-                if (err) {
-                    console.error("costService error:", err);
-                    return reject(err);
-                }
-                if (this.changes === 0) {
-                    return resolve({ status: 404, message: "Job not found or access denied" });
-                }
-                return resolve({ status: 200 });
-            }
-        );
-    });
+    const result = await Job.updateOne({ jobId, ...tenantFilter(storeId) }, { $set: { costOfJob: cost } });
+    return result.matchedCount ? { status: 200 } : { status: 404, message: 'Job not found or access denied' };
 }
 
 async function updateStatusService(jobId, status, storeId) {
-    const validStatuses = ["pending", "printing", "paused", "completed", "cancelled"];
-    if (!validStatuses.includes(status)) {
-        return { status: 400, message: "Invalid status value" };
-    }
-    return new Promise((resolve, reject) => {
-        db.run(
-            `UPDATE print_jobs
-             SET status = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE job_id = ? AND store_id = ?`,
-            [status, jobId, storeId],
-            function (err) {
-                if (err) {
-                    console.error("updateStatusService error:", err);
-                    return reject(err);
-                }
-                if (this.changes === 0) {
-                    return resolve({ status: 404, message: "Job not found or access denied" });
-                }
-                return resolve({ status: 200 });
-            }
-        );
-    });
+    const validStatuses = ['pending', 'printing', 'paused', 'completed', 'cancelled'];
+    if (!validStatuses.includes(status)) return { status: 400, message: 'Invalid status value' };
+    const result = await Job.updateOne({ jobId, ...tenantFilter(storeId) }, { $set: { status } });
+    return result.matchedCount ? { status: 200 } : { status: 404, message: 'Job not found or access denied' };
 }
 
 async function getJobFilesService(jobId, storeId) {
-    return new Promise((resolve, reject) => {
-        // JOIN with print_jobs to enforce tenant ownership
-        db.all(
-            `SELECT f.id, f.job_id, f.file_name, f.file_path, f.file_type, f.pages
-             FROM print_job_files f
-             INNER JOIN print_jobs j ON j.job_id = f.job_id
-             WHERE f.job_id = ? AND j.store_id = ?`,
-            [jobId, storeId],
-            (err, rows) => {
-                if (err) {
-                    console.error("getJobFilesService error:", err);
-                    return reject(err);
-                }
-                return resolve({ status: 200, files: rows || [] });
-            }
-        );
-    });
+    const job = await Job.findOne({ jobId, ...tenantFilter(storeId) }, { files: 1 }).lean();
+    return { status: 200, files: job?.files || [] };
 }
 
 async function createManualJobService(storeId, jobData) {
-    const { customer_name, sender_phone, pages, source, notes } = jobData;
     const jobId = `MAN-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-
-    return new Promise((resolve, reject) => {
-        db.run(
-            `INSERT INTO print_jobs
-                (job_id, store_id, customer_name, sender_phone, source, file_count, total_pages, status, cost_of_job)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0)`,
-            [
-                jobId,
-                storeId,
-                customer_name || "Walk-in Customer",
-                sender_phone || "manual",
-                source || "manual",
-                0,
-                parseInt(pages) || 1
-            ],
-            function (err) {
-                if (err) {
-                    console.error("createManualJobService error:", err);
-                    return reject(err);
-                }
-                return resolve({
-                    status: 201,
-                    job: {
-                        job_id: jobId,
-                        store_id: storeId,
-                        customer_name: customer_name || "Walk-in Customer",
-                        sender_phone: sender_phone || "manual",
-                        source: source || "manual",
-                        file_count: 0,
-                        total_pages: parseInt(pages) || 1,
-                        status: "pending",
-                        cost_of_job: 0,
-                        created_at: new Date().toISOString()
-                    }
-                });
-            }
-        );
+    const job = await Job.create({
+        jobId,
+        storeId: Number.isNaN(Number(storeId)) ? storeId : Number(storeId),
+        legacyStoreId: Number(storeId),
+        customerName: jobData.customer_name || 'Walk-in Customer',
+        senderPhone: jobData.sender_phone || 'manual',
+        source: jobData.source || 'manual',
+        totalPages: parseInt(jobData.pages, 10) || 1,
+        status: 'pending',
+        costOfJob: 0,
+        notes: jobData.notes,
+        files: []
     });
+    return { status: 201, job: job.toObject() };
 }
 
 async function getDashboardSummaryService(storeId) {
-    const countsRow = await new Promise((resolve, reject) => {
-        db.get(
-            `SELECT
-                COUNT(*) AS total,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-                SUM(CASE WHEN status = 'printing' THEN 1 ELSE 0 END) AS printing,
-                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-                COALESCE(SUM(cost_of_job), 0) AS revenue
-             FROM print_jobs
-             WHERE store_id = ?`,
-            [storeId],
-            (err, row) => {
-                if (err) return reject(err);
-                resolve(row || {});
-            }
-        );
-    });
-
-    const incomingJobs = await new Promise((resolve, reject) => {
-        db.all(
-            `SELECT job_id, sender_phone, customer_name, source, total_pages, file_count, status, created_at
-             FROM print_jobs
-             WHERE store_id = ?
-             ORDER BY datetime(created_at) DESC
-             LIMIT 5`,
-            [storeId],
-            (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows || []);
-            }
-        );
-    });
-
-    const recentActivity = await new Promise((resolve, reject) => {
-        db.all(
-            `SELECT job_id, status, sender_phone, customer_name, updated_at, created_at
-             FROM print_jobs
-             WHERE store_id = ?
-             ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
-             LIMIT 8`,
-            [storeId],
-            (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows || []);
-            }
-        );
-    });
-
-    const total = Number(countsRow.total || 0);
-    const pending = Number(countsRow.pending || 0);
-    const queueLoad = total > 0 ? Math.min(100, Math.round((pending / total) * 100)) : 0;
-
+    const filter = tenantFilter(storeId);
+    const [counts, incomingJobs, recentActivity] = await Promise.all([
+        Job.aggregate([{ $match: filter }, { $group: {
+            _id: null,
+            total: { $sum: 1 },
+            pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+            printing: { $sum: { $cond: [{ $eq: ['$status', 'printing'] }, 1, 0] } },
+            completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+            revenue: { $sum: '$costOfJob' }
+        } }]),
+        Job.find(filter).sort({ createdAt: -1 }).limit(5).lean(),
+        Job.find(filter).sort({ updatedAt: -1 }).limit(8).lean()
+    ]);
+    const count = counts[0] || {};
+    const total = Number(count.total || 0);
+    const pending = Number(count.pending || 0);
     return {
         status: 200,
         summary: {
-            total,
-            pending,
-            printing: Number(countsRow.printing || 0),
-            completed: Number(countsRow.completed || 0),
-            revenue: Number(countsRow.revenue || 0),
-            queueLoad,
-            incomingJobs,
-            recentActivity
+            total, pending, printing: Number(count.printing || 0), completed: Number(count.completed || 0),
+            revenue: Number(count.revenue || 0), queueLoad: total ? Math.min(100, Math.round((pending / total) * 100)) : 0,
+            incomingJobs, recentActivity
         }
     };
 }
 
-module.exports = {
-    ordersService,
-    costService,
-    updateStatusService,
-    getJobFilesService,
-    createManualJobService,
-    getDashboardSummaryService
-};
+module.exports = { ordersService, costService, updateStatusService, getJobFilesService, createManualJobService, getDashboardSummaryService };

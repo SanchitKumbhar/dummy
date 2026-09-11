@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { exec, execFile } = require("child_process");
 const util = require("util");
-const db = require("../config/sqlite.config");
+const Store = require('../model/store.model');
 
 const execPromise = util.promisify(exec);
 const execFilePromise = util.promisify(execFile);
@@ -102,19 +102,13 @@ function getExtensionFromMedia(contentType = "", fileName = "") {
  * Falls back to the global env token during early development/single-WABA testing.
  * Shared by both job.worker.js and archive.worker.js so token logic lives in one place.
  */
-function getTokenForStore(storeId) {
-    return new Promise((resolve) => {
-        db.get(
-            `SELECT whatsapp_access_token FROM stores WHERE store_id = ?`,
-            [storeId],
-            (err, row) => {
-                if (err || !row?.whatsapp_access_token) {
-                    return resolve(GLOBAL_WHATSAPP_TOKEN || null);
-                }
-                resolve(row.whatsapp_access_token);
-            }
-        );
-    });
+async function getTokenForStore(storeId) {
+    try {
+        const store = await Store.findById(storeId).select('whatsapp.accessToken').lean();
+        return store?.whatsapp?.accessToken || GLOBAL_WHATSAPP_TOKEN || null;
+    } catch (_) {
+        return GLOBAL_WHATSAPP_TOKEN || null;
+    }
 }
 
 /**

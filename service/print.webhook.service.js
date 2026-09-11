@@ -1,60 +1,6 @@
 const path = require("path");
-const db = require("../config/sqlite.config");
+const Job = require('../model/job.model');
 const { prepareIncomingFiles, isUnsupportedMediaType } = require("./archive.service.js");
-
-/**
- * Promisified single-statement run helper (for job insert / transaction control).
- */
-const runAsync = (sql, params = []) =>
-    new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) return reject(err);
-            resolve(this);
-        });
-    });
-
-/**
- * Bulk-insert file records using ONE prepared statement reused for every row,
- * instead of Promise.all-ing N independent db.run() calls (each of which
- * implicitly prepares + binds + finalizes its own statement).
- * Wrapped in db.serialize() so writes execute strictly in order on the
- * same connection, which also removes the need for Promise.all's
- * concurrency (SQLite is single-writer anyway, so "parallel" db.run calls
- * were being queued serially under the hood regardless).
- */
-const insertFileRecords = (jobId, files) => {
-    return new Promise((resolve, reject) => {
-        if (files.length === 0) return resolve();
-
-        db.serialize(() => {
-            const stmt = db.prepare(
-                `INSERT INTO print_job_files
-                (job_id, file_name, file_path, file_type, pages)
-                VALUES (?, ?, ?, ?, ?)`
-            );
-
-            let firstError = null;
-            for (const file of files) {
-                stmt.run(
-                    jobId,
-                    file.fileName || path.basename(file.localPath || ""),
-                    file.localPath || file.file_path || "",
-                    file.contentType || file.file_type || "application/octet-stream",
-                    file.pages || 0,
-                    (err) => {
-                        if (err && !firstError) firstError = err;
-                    }
-                );
-            }
-
-            stmt.finalize((err) => {
-                if (firstError) return reject(firstError);
-                if (err) return reject(err);
-                resolve();
-            });
-        });
-    });
-};
 
 /**
  * Build the file shape the frontend expects. Pulled into a helper so the
@@ -136,24 +82,24 @@ const processIncomingMessage = async (payload, io, storeId = 1, preparedFiles = 
                 `Please send as PDF, JPG, PNG, DOC, DOCX, PPTX, or XLSX.`;
         }
 
-        // Transaction: BEGIN -> insert job -> bulk insert files -> COMMIT
-        await runAsync("BEGIN TRANSACTION");
-
-        try {
-            await runAsync(
-                `INSERT INTO print_jobs
-                (job_id, store_id, sender_phone, source, file_count, total_pages, status, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [jobId, storeId, senderPhone, "whatsapp", files.length, totalPages, jobStatus, jobNotes]
-            );
-
-            await insertFileRecords(jobId, files);
-
-            await runAsync("COMMIT");
-        } catch (err) {
-            await runAsync("ROLLBACK").catch(() => {});
-            throw err;
-        }
+        const jobFiles = files.map((file) => ({
+            fileName: file.fileName || path.basename(file.localPath || ''),
+            fileType: file.contentType || file.file_type || 'application/octet-stream',
+            pages: file.pages || 0,
+            r2Key: file.r2Key || file.localPath || '',
+            fileUrl: file.fileUrl || file.localPath || ''
+        }));
+        await Job.create({
+            jobId,
+            storeId,
+            customerName: `WhatsApp (${senderPhone.slice(-4)})`,
+            senderPhone,
+            source: 'whatsapp',
+            status: jobStatus,
+            notes: jobNotes,
+            totalPages,
+            files: jobFiles
+        });
 
         // Response Object
         const createdJob = {

@@ -1,21 +1,12 @@
-const db = require("../config/sqlite.config");
+const Job = require('../model/job.model');
+const mongoose = require('mongoose');
 
 // FIX: was db.run() (no rows), wrong columns, broken promise, bad SQL quote on 'pending'
 async function pendingJobsSyncService(storeId) {
-    return new Promise((resolve, reject) => {
-        db.all(
-            `SELECT job_id, sender_phone, file_path, source, total_pages, status, created_at
-             FROM print_jobs
-             JOIN print_job_files USING (job_id)
-             WHERE print_jobs.store_id = ?
-               AND print_jobs.status = 'pending'`,
-            [storeId],
-            (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows || []);
-            }
-        );
-    });
+    const filters = mongoose.isValidObjectId(storeId)
+        ? [{ storeId: new mongoose.Types.ObjectId(storeId) }, { storeId: String(storeId) }]
+        : [{ legacyStoreId: Number(storeId) }];
+    return Job.find({ $or: filters, status: 'pending' }).sort({ createdAt: -1 }).lean();
 }
 
 module.exports = pendingJobsSyncService;

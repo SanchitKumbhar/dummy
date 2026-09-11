@@ -131,8 +131,7 @@ const router = express.Router();
 // auth middleware file exports something other than a plain function.
 const requireAuth = require("../middleware/auth.middleware");
 
-// Same db module index.js uses (config/sqlite.config).
-const db = require("../config/sqlite.config");
+const Store = require('../model/store.model');
 
 const FB_APP_ID = process.env.FB_APP_ID;
 const FB_APP_SECRET = process.env.FB_APP_SECRET; // never sent to frontend
@@ -143,24 +142,6 @@ const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 // Small promisified helpers around the sqlite3-style
 // callback API (db.get(sql, params, cb) / db.run(sql, params, cb)).
 // ─────────────────────────────────────────────
-function dbGet(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) return reject(err);
-            resolve(row);
-        });
-    });
-}
-
-function dbRun(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) return reject(err);
-            resolve(this);
-        });
-    });
-}
-
 // Final route: POST /api/whatsapp/v1/connect
 router.post("/v1/connect", requireAuth, async (req, res) => {
     const { code, wabaId, phoneNumberId, businessId } = req.body;
@@ -202,10 +183,7 @@ router.post("/v1/connect", requireAuth, async (req, res) => {
         const resolvedBusinessId = businessId || wabaData.owner_business?.id || null;
 
         // 4. Check this phone number isn't already linked to a DIFFERENT store
-        const existing = await dbGet(
-            `SELECT store_id FROM stores WHERE whatsapp_phone_number_id = ? AND store_id != ?`,
-            [phoneNumberId, storeId]
-        );
+        const existing = await Store.findOne({ 'whatsapp.phoneNumberId': phoneNumberId, _id: { $ne: storeId } }).lean();
         if (existing) {
             return res.status(409).json({ message: "This WhatsApp number is already connected to another store." });
         }
@@ -214,26 +192,17 @@ router.post("/v1/connect", requireAuth, async (req, res) => {
         await fetch(`${GRAPH}/${wabaId}/subscribed_apps?access_token=${accessToken}`, { method: "POST" });
 
         // 6. Persist against the store using the long-lived token
-        await dbRun(
-            `UPDATE stores SET
-                whatsapp_phone_number_id = ?,
-                whatsapp_access_token = ?,
-                whatsapp_waba_id = ?,
-                whatsapp_business_id = ?,
-                whatsapp_display_phone_number = ?,
-                whatsapp_verified_name = ?,
-                whatsapp_connected_at = CURRENT_TIMESTAMP
-             WHERE store_id = ?`,
-            [
+        await Store.findByIdAndUpdate(storeId, { $set: {
+            whatsapp: {
                 phoneNumberId,
                 accessToken,
                 wabaId,
-                resolvedBusinessId,
-                phoneData.display_phone_number || null,
-                phoneData.verified_name || null,
-                storeId
-            ]
-        );
+                businessId: resolvedBusinessId,
+                displayPhoneNumber: phoneData.display_phone_number || null,
+                verifiedName: phoneData.verified_name || null,
+                connectedAt: new Date()
+            }
+        } }, { runValidators: true });
 
         // 7. Respond to frontend
         return res.json({

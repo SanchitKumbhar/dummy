@@ -8,12 +8,15 @@
     "worker": "node workers/job.worker.js",
     "worker:archive": "node workers/archive.worker.js",
     "deploy": "wrangler deploy",
-    "preview": "wrangler dev"
+    "preview": "wrangler dev",
+    "migrate:sqlite": "node scripts/migrate-sqlite-to-mongo.js"
   },
   "author": "sanchit kumbhar",
   "license": "ISC",
   "description": "PrintFlow MicroSaaS print shop backend",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@socket.io/admin-ui": "^0.5.1",
     "@socket.io/redis-adapter": "^8.3.0",
     "axios": "^1.7.2",
@@ -27,11 +30,11 @@
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "mailparser": "^3.9.14",
+    "mongoose": "^9.9.5",
     "multer": "^2.2.0",
     "nodemon": "^3.1.14",
     "redis": "^5.12.1",
     "socket.io": "^4.8.3",
-    "sqlite3": "^6.0.1",
     "uuid": "^10.0.0"
   },
   "devDependencies": {

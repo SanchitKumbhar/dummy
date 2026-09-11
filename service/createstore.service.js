@@ -1,5 +1,5 @@
-const db = require("../config/sqlite.config");
 const bcrypt = require("bcrypt");
+const Store = require("../model/store.model");
 
 async function createstoreservice(storename, phonenumber, password) {
     if (!password) {
@@ -8,23 +8,13 @@ async function createstoreservice(storename, phonenumber, password) {
 
     const hash = await bcrypt.hash(password, 10);
 
-    return new Promise((resolve, reject) => {
-        db.run(
-            `INSERT INTO stores (store_name, phone_number, password) VALUES (?, ?, ?)`,
-            [storename, phonenumber, hash],
-            function (err) {
-                if (err) {
-                    if (err.code === "SQLITE_CONSTRAINT") {
-                        return resolve({ status: 409, message: "Phone number already registered" });
-                    }
-                    console.error("createstoreservice error:", err);
-                    return reject(err);
-                }
-                console.log("Store created with ID:", this.lastID);
-                return resolve({ status: 201, storeId: this.lastID });
-            }
-        );
-    });
+    try {
+        const store = await Store.create({ storeName: storename, phoneNumber: phonenumber, password: hash });
+        return { status: 201, storeId: store._id.toString() };
+    } catch (error) {
+        if (error.code === 11000) return { status: 409, message: "Phone number already registered" };
+        throw error;
+    }
 }
 
 module.exports = createstoreservice;
