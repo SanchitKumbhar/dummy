@@ -16,6 +16,7 @@ const userRoutes = require('./router/user.auth');
 const orderRoute = require('./router/order.route');
 const storeRoute = require('./router/store.route');
 const customerRoute = require('./router/customer.route');
+const emailRoute = require('./router/email.routes');
 const whatsappRoute = require('./router/token.route');
 const { router: paymentRoute, licenseRouter } = require('./router/payment.route');
 const storageRoute = require('./router/storage.route');
@@ -49,6 +50,7 @@ app.use('/api/print-job', printwebhook);
 app.use('/api/store', storeRoute);
 app.use('/api/customers', customerRoute);
 app.use('/api/whatsapp', whatsappRoute);
+app.use('/api/email', emailRoute);
 
 app.get('/webhook', (req, res) => {
     const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
