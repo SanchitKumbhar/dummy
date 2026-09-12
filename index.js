@@ -38,7 +38,13 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id);
-    socket.on('register-store', ({ storeId }) => socket.join(`store-${storeId}`));
+    socket.on('register-store', ({ storeId }) => {
+        if (storeId) {
+            const room = `store-${String(storeId)}`;
+            socket.join(room);
+            console.log(`Socket ${socket.id} joined room: ${room}`);
+        }
+    });
     socket.on('disconnect', (reason) => console.log('Socket disconnected:', socket.id, reason));
 });
 
@@ -54,7 +60,8 @@ app.use('/api/email', emailRoute);
 
 app.get('/webhook', (req, res) => {
     const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
-    res.status(mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN ? 200 : 403).send(mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN ? challenge : 'Forbidden');
+    res.status(mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN ? 200 : 403)
+       .send(mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN ? challenge : 'Forbidden');
 });
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
@@ -67,16 +74,21 @@ async function tryConnectRedis() {
         bullRedis.on('error', (error) => console.error('BullMQ Redis error:', error.message));
         app.set('messageQueue', new Queue('whatsapp-jobs', { connection: bullRedis }));
         app.set('archiveQueue', new Queue('archive-jobs', { connection: new Redis(redisUrl, { maxRetriesPerRequest: null, enableReadyCheck: false }) }));
+        
         const pubClient = new Redis(redisUrl);
         const subClient = new Redis(redisUrl);
         const eventClient = new Redis(redisUrl);
+        
         io.adapter(createAdapter(pubClient, subClient));
         await eventClient.subscribe('store-events');
+        
         eventClient.on('message', (channel, message) => {
             if (channel !== 'store-events') return;
             try {
                 const { storeId, event, data } = JSON.parse(message);
-                io.to(`store-${storeId}`).emit(event, data);
+                const room = `store-${String(storeId)}`;
+                io.to(room).emit(event, data);
+                console.log(`Dispatched ${event} to room ${room}`);
             } catch (error) {
                 console.error('Redis bridge error:', error.message);
             }
@@ -96,7 +108,7 @@ const PORT = process.env.PORT || 5000;
     try {
         await connectMongoDB();
         await tryConnectRedis();
-        server.listen(PORT, () => console.log(`PrintFlow backend running on http://localhost:${PORT}`));
+        server.listen(PORT, () => console.log(`YellowQueue backend running on http://localhost:${PORT}`));
     } catch (error) {
         console.error('Fatal startup error:', error);
         process.exit(1);

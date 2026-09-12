@@ -1,39 +1,6 @@
 const path = require("path");
-const db = require("../config/sqlite.config");
+const Job = require("../model/job.model");
 const { getPageCount } = require("./archive.service.js");
-
-// Promisified database helpers
-const runAsync = (sql, params = []) =>
-    new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) return reject(err);
-            resolve(this);
-        });
-    });
-
-const insertFileRecords = (jobId, files) => {
-    return new Promise((resolve, reject) => {
-        if (files.length === 0) return resolve();
-        db.serialize(() => {
-            const stmt = db.prepare(
-                `INSERT INTO print_job_files
-                (job_id, file_name, file_path, file_type, pages)
-                VALUES (?, ?, ?, ?, ?)`
-            );
-            let firstError = null;
-            for (const file of files) {
-                stmt.run(jobId, file.fileName, file.localPath, file.contentType, file.pages || 0, (err) => {
-                    if (err && !firstError) firstError = err;
-                });
-            }
-            stmt.finalize((err) => {
-                if (firstError) return reject(firstError);
-                if (err) return reject(err);
-                resolve();
-            });
-        });
-    });
-};
 
 /**
  * Main email processor
@@ -43,11 +10,10 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
         const senderEmail = emailData.from || "unknown@email.com";
         const subject = emailData.subject || "No Subject";
         const jobId = `email-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-        console.log(senderEmail);
+        
         let jobStatus = "pending";
         let jobNotes = subject;
 
-        // Count pages for each attachment
         const files = await Promise.all(attachments.map(async (file) => {
             const pages = await getPageCount(file.path, file.mimetype);
             return {
@@ -66,28 +32,31 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
             jobNotes = "No supported attachments found in the email.";
         }
 
-        // Database Transaction
-        await runAsync("BEGIN TRANSACTION");
-        try {
-            await runAsync(
-                `INSERT INTO print_jobs
-                (job_id, store_id, sender_phone, source, file_count, total_pages, status, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                // We store the sender's email in sender_phone to reuse your schema
-                [jobId, storeId, senderEmail, "email", files.length, totalPages, jobStatus, jobNotes]
-            );
-            await insertFileRecords(jobId, files);
-            await runAsync("COMMIT");
-        } catch (err) {
-            await runAsync("ROLLBACK").catch(() => {});
-            throw err;
-        }
+        const mongoFiles = files.map((file) => ({
+            fileName: file.fileName,
+            fileType: file.contentType || "application/octet-stream",
+            pages: file.pages || 1,
+            r2Key: file.localPath,
+            fileUrl: file.localPath
+        }));
+
+        await Job.create({
+            jobId,
+            storeId: String(storeId),
+            customerName: `Email (${senderEmail.split('@')[0]})`,
+            senderPhone: senderEmail,
+            source: "email",
+            status: jobStatus,
+            notes: jobNotes,
+            totalPages,
+            files: mongoFiles
+        });
 
         const createdJob = {
             jobId,
             job_id: jobId,
-            storeId,
-            store_id: storeId,
+            storeId: String(storeId),
+            store_id: String(storeId),
             senderPhone: senderEmail,
             sender_phone: senderEmail,
             customer_name: `Email (${senderEmail.split('@')[0]})`,
@@ -101,6 +70,8 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
             files: files.map(f => ({
                 file_name: f.fileName,
                 fileName: f.fileName,
+                original_name: f.fileName,
+                originalName: f.fileName,
                 file_path: f.localPath,
                 filePath: f.localPath,
                 file_type: f.contentType,
@@ -112,13 +83,11 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
             createdAt: new Date().toISOString()
         };
 
-        // Emit to the specific store's desktop client
         if (io) {
-            io.to(`store-${storeId}`).emit("new-job", createdJob);
+            io.to(`store-${String(storeId)}`).emit("new-job", createdJob);
         }
 
         return createdJob;
-
     } catch (error) {
         console.error("processIncomingEmail error:", error);
         throw error;
