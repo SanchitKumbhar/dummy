@@ -4,13 +4,8 @@ let io;
 
 module.exports = {
   // 1. Called once in your main index.js to attach Socket.io to your HTTP server
-  init: (httpServer) => {
-    io = new Server(httpServer, {
-      cors: {
-        origin: '*', // Adjust to match your frontend URL in production
-        methods: ['GET', 'POST', 'PUT', 'DELETE']
-      }
-    });
+  init: (ioInstance) => {
+    io = ioInstance;
 
     io.on('connection', (socket) => {
       console.log('New client connected via socket:', socket.id);
