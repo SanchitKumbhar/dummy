@@ -1,0 +1,4 @@
+quick actions not working
+there should be network handler iif any error happens connection should not drop
+releasee beta exe
+test on shop

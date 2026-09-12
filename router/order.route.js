@@ -1,22 +1,15 @@
 const express = require("express");
-const middleware = require("../middleware/auth.middleware");
-const {
-    orderController,
-    costController,
-    updateStatusController,
-    getJobFilesController,
-    createManualJobController,
-    dashboardSummaryController
-} = require("../controller/orders.controller");
-
 const router = express.Router();
+const { authMiddleware } = require("../middleware/auth.middleware");
+const { syncPendingData } = require("../controller/pending.sync.controller");
+const orderController = require("../controller/orders.controller");
 
-// All order routes require authentication
-router.get("/v1/get-order", middleware, orderController);
-router.patch("/v1/cost-order", middleware, costController);
-router.patch("/v1/update-status", middleware, updateStatusController);
-router.get("/v1/files/:jobId", middleware, getJobFilesController);
-router.post("/v1/create-manual-job", middleware, createManualJobController);
-router.get("/v1/dashboard-summary", middleware, dashboardSummaryController);
+// Add sync endpoint
+router.post("/sync", authMiddleware, syncPendingData);
+
+router.get("/get-order", authMiddleware, orderController.getOrder);
+router.get("/dashboard-summary", authMiddleware, orderController.getDashboardSummary);
+router.patch("/update-status", authMiddleware, orderController.updateStatus);
+router.patch("/cost-order", authMiddleware, orderController.costOrder);
 
 module.exports = router;
