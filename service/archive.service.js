@@ -4,6 +4,7 @@ const path = require("path");
 const { exec, execFile } = require("child_process");
 const util = require("util");
 const Store = require('../model/store.model');
+const { uploadFileToS3 } = require('./s3.service');
 
 const execPromise = util.promisify(exec);
 const execFilePromise = util.promisify(execFile);
@@ -332,15 +333,29 @@ async function prepareIncomingFiles(payload, token) {
 
             if (isArchiveAttachment(resolvedContentType, fileName)) {
                 const extractedFiles = await extractArchiveFile(downloadedPath, fileName, extractedRootDir);
-                files.push(...extractedFiles);
+                
+                for (const extractedFile of extractedFiles) {
+                    const s3Result = await uploadFileToS3(extractedFile.localPath, extractedFile.fileName, extractedFile.contentType);
+                    files.push({
+                        ...extractedFile,
+                        fileUrl: s3Result.fileUrl,
+                        r2Key: s3Result.r2Key
+                    });
+                }
+                
                 continue;
             }
+
+            const pages = await getPageCount(downloadedPath, resolvedContentType);
+            const s3Result = await uploadFileToS3(downloadedPath, path.basename(fileName), resolvedContentType);
 
             files.push({
                 localPath: downloadedPath,
                 fileName: path.basename(fileName),
                 contentType: resolvedContentType,
-                pages: await getPageCount(downloadedPath, resolvedContentType)
+                pages: pages,
+                fileUrl: s3Result.fileUrl,
+                r2Key: s3Result.r2Key
             });
         } catch (err) {
             console.error(`Failed to process media ${i} (${mediaId}) for message ${messageSid}:`, err.message);

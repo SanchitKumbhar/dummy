@@ -1,6 +1,7 @@
 const path = require("path");
 const Job = require("../model/job.model");
 const { getPageCount } = require("./archive.service.js");
+const { uploadFileToS3 } = require("./s3.service");
 
 /**
  * Main email processor
@@ -16,11 +17,16 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
 
         const files = await Promise.all(attachments.map(async (file) => {
             const pages = await getPageCount(file.path, file.mimetype);
+            // Upload to Supabase S3
+            const s3Result = await uploadFileToS3(file.path, file.originalname, file.mimetype);
+            
             return {
                 fileName: file.originalname,
                 localPath: file.path,
                 contentType: file.mimetype,
-                pages: pages
+                pages: pages,
+                fileUrl: s3Result.fileUrl,
+                r2Key: s3Result.r2Key
             };
         }));
 
@@ -36,8 +42,8 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
             fileName: file.fileName,
             fileType: file.contentType || "application/octet-stream",
             pages: file.pages || 1,
-            r2Key: file.localPath,
-            fileUrl: file.localPath
+            r2Key: file.r2Key,
+            fileUrl: file.fileUrl
         }));
 
         await Job.create({
@@ -72,12 +78,13 @@ const processIncomingEmail = async (emailData, attachments, io, storeId) => {
                 fileName: f.fileName,
                 original_name: f.fileName,
                 originalName: f.fileName,
-                file_path: f.localPath,
-                filePath: f.localPath,
+                file_path: f.fileUrl, // use S3 URL
+                filePath: f.fileUrl,
                 file_type: f.contentType,
                 fileType: f.contentType,
                 pages: f.pages || 1,
-                localPath: f.localPath
+                localPath: f.fileUrl, // no longer locally present
+                url: f.fileUrl
             })),
             cost_of_job: 0,
             createdAt: new Date().toISOString()

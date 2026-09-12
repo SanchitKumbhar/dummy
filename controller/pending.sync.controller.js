@@ -10,7 +10,7 @@ const { getIO } = require("../service/socket.service");
 
 exports.syncPendingData = async (req, res) => {
     try {
-        const storeId = req.user.storeId || req.user.id || req.body.storeId;
+        const storeId = req.storeId || req.body.storeId;
         const { clientMutations = [], lastSyncTimestamp } = req.body;
 
         const resolvedMutations = [];
@@ -20,22 +20,13 @@ exports.syncPendingData = async (req, res) => {
             const { type, jobId, payload, mutationId } = mutation;
             try {
                 if (type === "UPDATE_STATUS") {
-                    await Order.update(
-                        { status: payload.status },
-                        { where: { job_id: jobId, store_id: storeId } }
-                    );
+                    await Job.updateOne({ jobId }, { $set: { status: payload.status } });
                     resolvedMutations.push({ mutationId, status: "applied" });
                 } else if (type === "UPDATE_COST") {
-                    await Order.update(
-                        { cost_of_job: payload.cost },
-                        { where: { job_id: jobId, store_id: storeId } }
-                    );
+                    await Job.updateOne({ jobId }, { $set: { costOfJob: payload.cost } });
                     resolvedMutations.push({ mutationId, status: "applied" });
                 } else if (type === "UPDATE_PAYMENT") {
-                    await Order.update(
-                        { payment_status: payload.paymentStatus },
-                        { where: { job_id: jobId, store_id: storeId } }
-                    );
+                    await Job.updateOne({ jobId }, { $set: { paymentStatus: payload.paymentStatus } });
                     resolvedMutations.push({ mutationId, status: "applied" });
                 }
             } catch (mutErr) {
@@ -45,20 +36,27 @@ exports.syncPendingData = async (req, res) => {
         }
 
         // 2. Fetch all fresh or updated jobs for this store
-        let queryCondition = { store_id: storeId };
-        if (lastSyncTimestamp) {
-            // Include records created/updated after the last client sync
-            queryCondition.updated_at = {
-                [require("sequelize").Op.gte]: new Date(lastSyncTimestamp)
-            };
+        const storeIdNum = Number(storeId);
+        let queryCondition = { 
+            $or: [
+                { storeId: String(storeId) },
+                { storeId: storeId }
+            ]
+        };
+        
+        if (!isNaN(storeIdNum)) {
+            queryCondition.$or.push({ legacyStoreId: storeIdNum });
         }
 
-        const orders = await Order.findAll({
-            where: { store_id: storeId },
-            include: [{ model: OrderFile, as: "files" }],
-            order: [["created_at", "DESC"]],
-            limit: 100
-        });
+        if (lastSyncTimestamp) {
+            // Include records created/updated after the last client sync
+            queryCondition.updatedAt = { $gte: new Date(lastSyncTimestamp) };
+        }
+
+        const orders = await Job.find(queryCondition)
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .lean();
 
         return res.status(200).json({
             success: true,
