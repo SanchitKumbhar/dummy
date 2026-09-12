@@ -1,10 +1,8 @@
-const express=require("express");
-const middleware=require("../middleware/auth.middleware");
-const pendingJobsSync=require("../controller/pending.sync.controller");
+const express = require('express');
+const router = express.Router();
+const pendingSyncController = require('../controller/pending.sync.controller');
 
-const router =express.Router();
+// Make sure the method name is exactly "syncPendingData"
+router.post('/sync', pendingSyncController.syncPendingData); 
 
-router.get("/v1/pending-jobs",middleware,pendingJobsSync);
-
-module.exports=router;
-
+module.exports = router;

@@ -21,7 +21,7 @@ const whatsappRoute = require('./router/token.route');
 const { router: paymentRoute, licenseRouter } = require('./router/payment.route');
 const storageRoute = require('./router/storage.route');
 const connectMongoDB = require('./config/mongo.config');
-
+const socketService = require('./service/socket.service');
 const app = express();
 const server = http.createServer(app);
 const io = require('socket.io')(server, { cors: { origin: '*' } });
@@ -35,7 +35,7 @@ app.use('/api/v1/storage', storageRoute);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+socketService.init(server);
 io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id);
     socket.on('register-store', ({ storeId }) => {
