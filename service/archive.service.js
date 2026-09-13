@@ -26,6 +26,8 @@ const MIME_BY_EXTENSION = {
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
     ".txt": "text/plain",
+    ".json": "application/json",
+    ".csv": "text/csv",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -36,6 +38,7 @@ const MIME_BY_EXTENSION = {
 const SUPPORTED_MEDIA_EXTENSIONS = [
     ".pdf", ".jpg", ".jpeg", ".png", ".webp",
     ".doc", ".docx", ".pptx", ".xlsx",
+    ".txt", ".json", ".csv",
     ".mp4", ".3gp", ".amr", ".aac", ".mp3", ".ogg"
 ];
 
